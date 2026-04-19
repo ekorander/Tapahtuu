@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://api.hel.fi/linkedevents/v1/event/?format=json&start=today&bbox=24.5,60.05,25.3,60.4&page_size=3&include=location\")",
+      "Bash(python3 -c \" import json,sys d=json.load\\(sys.stdin\\) print\\('Total events:', d.get\\('meta',{}\\).get\\('count','?'\\)\\) ev = d.get\\('data',[]\\) if ev: e=ev[0] print\\('Sample name:', e.get\\('name',{}\\).get\\('fi','?'\\)\\) print\\('Has location:', bool\\(e.get\\('location',{}\\).get\\('position'\\)\\)\\) print\\('Keywords:', [k.get\\('@id',''\\) for k in e.get\\('keywords',[]\\)[:3]]\\) \")",
+      "Bash(powershell *)"
+    ]
+  }
+}

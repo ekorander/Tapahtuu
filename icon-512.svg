@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#0d1b2a" rx="64"/>
+  <circle cx="256" cy="210" r="96" fill="none" stroke="#ff6b2b" stroke-width="16"/>
+  <circle cx="256" cy="210" r="28" fill="#ff6b2b"/>
+  <path d="M256 306 C256 306 160 240 160 192 A96 96 0 0 1 352 192 C352 240 256 306 256 306Z" fill="none" stroke="#ff6b2b" stroke-width="16" stroke-linejoin="round"/>
+  <text x="256" y="420" font-size="60" font-weight="700" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif">TAPAHTUU</text>
+</svg>

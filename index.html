@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="description" content="Löydä tapahtumat Helsingissä / Discover events in Helsinki" />
+  <meta name="theme-color" content="#0d1b2a" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Tapahtuu" />
+  <link rel="apple-touch-icon" href="icon-192.svg" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Tapahtuu – Helsinki Events" />
+  <meta property="og:description" content="Interactive map of events in Helsinki" />
+  <meta property="og:type" content="website" />
+
+  <title>Tapahtuu – Helsinki Events</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <header id="header">
+    <div class="header-top">
+      <div class="logo">
+        <div class="logo-icon">📍</div>
+        <div class="logo-text">Tapahtuu<span>.</span></div>
+      </div>
+
+      <div class="header-actions">
+        <span class="event-count" id="event-count">
+          <strong>–</strong> events
+        </span>
+
+        <div class="lang-toggle">
+          <button class="lang-btn" data-lang="fi">FI</button>
+          <button class="lang-btn" data-lang="en">EN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category filters -->
+    <div class="filters-row" id="cat-filters" role="toolbar" aria-label="Category filters">
+      <!-- Populated by JS -->
+    </div>
+
+    <!-- Date filters -->
+    <div class="date-filters-row" id="date-filters" role="toolbar" aria-label="Date filters">
+      <!-- Populated by JS -->
+    </div>
+  </header>
+
+  <!-- ── Map ────────────────────────────────────────────────────── -->
+  <div id="map" role="main" aria-label="Helsinki event map"></div>
+
+  <!-- ── No events notice ───────────────────────────────────────── -->
+  <div id="no-events" role="alert" aria-live="polite">
+    <div class="no-events-icon">🔍</div>
+    <strong id="no-events-title">Ei tapahtumia</strong>
+    <p id="no-events-sub">Kokeile eri suodatinta.</p>
+  </div>
+
+  <!-- ── Loading overlay ────────────────────────────────────────── -->
+  <div id="loading" role="status" aria-live="polite">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">Ladataan tapahtumia…</div>
+  </div>
+
+  <!-- ── Error toast ────────────────────────────────────────────── -->
+  <div id="toast" role="alert" aria-live="assertive"></div>
+
+  <!-- ── PWA install banner ─────────────────────────────────────── -->
+  <div id="install-banner" role="complementary" aria-label="Install app">
+    <div class="install-icon">📱</div>
+    <div class="install-text">
+      <strong id="install-title">Asenna Tapahtuu</strong>
+      <span id="install-sub">Nopea pääsy tapahtumiin</span>
+    </div>
+    <button class="install-btn" id="install-main-btn">Asenna</button>
+    <button class="install-dismiss" id="install-dismiss" aria-label="Dismiss">✕</button>
+  </div>
+
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.js"
+        integrity="sha256-/+2OIKHH1NnQ8KCPv2EBL50mSEGLlooCzHNDV1aXMDs=" crossorigin=""></script>
+
+<script src="app.js"></script>
+</body>
+</html>
