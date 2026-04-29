@@ -134,7 +134,7 @@ function getCategoryForEvent(event) {
 async function fetchEvents() {
   if (state.loading) return;
   state.loading = true;
-  showLoading(true);
+  showLoading(true, false);
 
   const cat = CATEGORIES.find((c) => c.id === state.category);
   const { start, end } = getDateRange(state.dateFilter);
@@ -146,30 +146,41 @@ async function fetchEvents() {
     bbox:      HKI_BBOX,
     page_size: '200',
     include:   'location,keywords',
-    language:  state.lang,
     sort:      'start_time',
   });
 
   if (cat && cat.keyword) params.set('keyword', cat.keyword);
 
+  const url = `${API_BASE}?${params}`;
+  console.log('[Tapahtuu] Fetching events:', url);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
   try {
-    const res = await fetch(`${API_BASE}?${params}`);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    console.log('[Tapahtuu] Response status:', res.status, res.ok);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    console.log('[Tapahtuu] Events received:', data.data?.length ?? 0, '| with location:', (data.data || []).filter(hasLocation).length);
     state.events = (data.data || []).filter(hasLocation);
     renderMarkers();
     updateCount();
+    showLoading(false, false);
   } catch (err) {
-    console.error('Fetch error:', err);
-    showToast(state.lang === 'fi'
-      ? 'Tapahtumien lataus epäonnistui. Tarkista yhteys.'
-      : 'Could not load events. Check your connection.');
+    clearTimeout(timeoutId);
+    const isTimeout = err.name === 'AbortError';
+    console.error('[Tapahtuu] Fetch error:', err.name, err.message);
+    const errMsg = state.lang === 'fi'
+      ? (isTimeout ? 'Yhteys aikakatkaistiin. Tarkista verkko.' : `Tapahtumien lataus epäonnistui. (${err.message})`)
+      : (isTimeout ? 'Request timed out. Check your network.' : `Could not load events. (${err.message})`);
+    showLoading(false, errMsg);
     state.events = [];
     renderMarkers();
     updateCount();
   } finally {
     state.loading = false;
-    showLoading(false);
   }
 }
 
@@ -288,9 +299,24 @@ function renderMarkers() {
 }
 
 // ── UI helpers ───────────────────────────────────────────────────
-function showLoading(on) {
-  document.getElementById('loading').classList.toggle('hidden', !on);
-  document.getElementById('loading-text').textContent = str('loading.text');
+function showLoading(on, errorMsg) {
+  const el = document.getElementById('loading');
+  const textEl = document.getElementById('loading-text');
+  const spinner = el.querySelector('.spinner');
+  if (on) {
+    el.classList.remove('hidden');
+    spinner.style.display = '';
+    textEl.textContent = str('loading.text');
+    textEl.style.color = '';
+  } else if (errorMsg) {
+    el.classList.remove('hidden');
+    spinner.style.display = 'none';
+    textEl.textContent = errorMsg;
+    textEl.style.color = '#ff6b6b';
+    setTimeout(() => el.classList.add('hidden'), 6000);
+  } else {
+    el.classList.add('hidden');
+  }
 }
 
 function showToast(msg) {
@@ -396,7 +422,7 @@ function initInstall() {
 // ── Service Worker ───────────────────────────────────────────────
 function initSW() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(console.warn);
+    navigator.serviceWorker.register('./sw.js').catch(console.warn);
   }
 }
 
