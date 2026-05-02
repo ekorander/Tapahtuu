@@ -41,6 +41,24 @@ let state = {
 
 let map, markerGroup, deferredInstall;
 
+// ── Cache helpers ─────────────────────────────────────────────────
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+function saveCache(key, events) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), events }));
+  } catch { /* storage quota exceeded — ignore */ }
+}
+
+function loadCache(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const { ts, events } = JSON.parse(raw);
+    return Date.now() - ts < CACHE_TTL ? events : [];
+  } catch { return []; }
+}
+
 // ── i18n helper ──────────────────────────────────────────────────
 const t = (obj) => {
   if (!obj) return '';
@@ -236,84 +254,109 @@ async function fetchEventbriteEvents() {
 async function fetchEvents() {
   if (state.loading) return;
   state.loading = true;
-  showLoading(true, false);
 
-  const cat = CATEGORIES.find((c) => c.id === state.category);
+  const cat      = CATEGORIES.find((c) => c.id === state.category);
   const { start, end } = getDateRange(state.dateFilter);
+  const cacheKey = `tapahtuu-${state.dateFilter}-${state.category}`;
+
+  // Show cached events instantly while fresh data loads in background
+  const cached = loadCache(cacheKey);
+  if (cached.length) {
+    state.events = cached;
+    renderMarkers();
+    updateCount();
+    console.log(`[Tapahtuu] Cache hit: ${cached.length} events`);
+  } else {
+    showLoading(true, false);
+  }
 
   const params = new URLSearchParams({
     format:    'json',
     start,
     end,
     bbox:      HKI_BBOX,
-    page_size: '100',   // Helsinki API hard-caps at 100; we paginate below
+    page_size: '100',
     include:   'location,keywords',
     sort:      'start_time',
   });
-
   if (cat && cat.keyword) params.set('keyword', cat.keyword);
 
   const firstUrl = `${API_BASE}?${params}`;
-  console.log('[Tapahtuu] Fetching Helsinki page 1:', firstUrl);
+  const cutoff   = new Date();
+  const MAX_PAGES = 5;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  // Live accumulators — both chains write here and call commitToMap()
+  let helEvents = [];
+  let ebEvents  = [];
 
-  try {
-    // Fetch first Helsinki page and Eventbrite in parallel
-    const [firstRes, ebEvents] = await Promise.all([
-      fetch(firstUrl, { signal: controller.signal }),
-      fetchEventbriteEvents(),
-    ]);
-    clearTimeout(timeoutId);
-
-    if (!firstRes.ok) throw new Error(`HTTP ${firstRes.status}`);
-    const firstData = await firstRes.json();
-    const raw = [...(firstData.data || [])];
-
-    // Follow meta.next links for subsequent pages (up to 5 pages = 500 events)
-    const MAX_PAGES = 5;
-    let nextUrl = firstData.meta?.next;
-    let page = 2;
-    while (nextUrl && page <= MAX_PAGES) {
-      console.log('[Tapahtuu] Fetching Helsinki page', page);
-      const res = await fetch(nextUrl);
-      if (!res.ok) break;
-      const data = await res.json();
-      raw.push(...(data.data || []));
-      nextUrl = data.meta?.next;
-      page++;
-    }
-
-    const cutoff = new Date();
-    const helEvents = raw.filter(hasLocation).filter(ev => {
-      const t = ev.end_time || ev.start_time;
-      return !t || new Date(t) > cutoff;
-    });
-
-    console.log(
-      `[Tapahtuu] Loaded — Helsinki: ${helEvents.length} (${page - 1} page(s))`,
-      `| Eventbrite: ${ebEvents.length}`,
-      `| Total: ${helEvents.length + ebEvents.length}`
-    );
-
+  function commitToMap() {
     state.events = [...helEvents, ...ebEvents].sort((a, b) =>
       new Date(a.start_time || 0) - new Date(b.start_time || 0)
     );
     renderMarkers();
     updateCount();
     showLoading(false, false);
-  } catch (err) {
-    clearTimeout(timeoutId);
-    const isTimeout = err.name === 'AbortError';
-    console.error('[Tapahtuu] Fetch error:', err.name, err.message);
-    const errMsg = state.lang === 'fi'
-      ? (isTimeout ? 'Yhteys aikakatkaistiin. Tarkista verkko.' : `Tapahtumien lataus epäonnistui. (${err.message})`)
-      : (isTimeout ? 'Request timed out. Check your network.' : `Could not load events. (${err.message})`);
-    showLoading(false, errMsg);
-    state.events = [];
-    renderMarkers();
-    updateCount();
+  }
+
+  function filterRaw(evs) {
+    return evs.filter(hasLocation).filter(ev => {
+      const ts = ev.end_time || ev.start_time;
+      return !ts || new Date(ts) > cutoff;
+    });
+  }
+
+  // ── Helsinki chain (page 1, then paginate) ───────────────────────
+  const helPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 10000);
+      console.log('[Tapahtuu] Fetching Helsinki page 1:', firstUrl);
+      const res = await fetch(firstUrl, { signal: controller.signal });
+      clearTimeout(tid);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      helEvents = filterRaw(data.data || []);
+      commitToMap();
+      console.log(`[Tapahtuu] Helsinki page 1: ${helEvents.length}`);
+
+      let nextUrl = data.meta?.next;
+      let page = 2;
+      while (nextUrl && page <= MAX_PAGES) {
+        console.log('[Tapahtuu] Fetching Helsinki page', page);
+        const r = await fetch(nextUrl);
+        if (!r.ok) break;
+        const d = await r.json();
+        const more = filterRaw(d.data || []);
+        helEvents = [...helEvents, ...more];
+        commitToMap();
+        console.log(`[Tapahtuu] Helsinki page ${page}: +${more.length} → ${helEvents.length} total`);
+        nextUrl = d.meta?.next;
+        page++;
+      }
+    } catch (err) {
+      console.error('[Tapahtuu] Helsinki error:', err.name, err.message);
+      if (!cached.length && !ebEvents.length) {
+        const isTimeout = err.name === 'AbortError';
+        const msg = state.lang === 'fi'
+          ? (isTimeout ? 'Yhteys aikakatkaistiin. Tarkista verkko.' : `Lataus epäonnistui. (${err.message})`)
+          : (isTimeout ? 'Request timed out. Check your network.'   : `Could not load events. (${err.message})`);
+        showLoading(false, msg);
+      }
+    }
+  })();
+
+  // ── Eventbrite chain (independent, renders when ready) ───────────
+  const ebPromise = (async () => {
+    ebEvents = await fetchEventbriteEvents();
+    commitToMap();
+    console.log(`[Tapahtuu] Eventbrite: ${ebEvents.length}`);
+  })();
+
+  try {
+    await Promise.all([helPromise, ebPromise]);
+    if (state.events.length) saveCache(cacheKey, state.events);
+    console.log(`[Tapahtuu] Done — Helsinki: ${helEvents.length} | Eventbrite: ${ebEvents.length} | Total: ${state.events.length}`);
   } finally {
     state.loading = false;
   }
@@ -563,6 +606,9 @@ function initSW() {
 
 // ── Boot ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  // Map first — visible immediately, tiles start loading before any API call
+  initMap();
+
   // Lang toggle buttons
   document.querySelectorAll('.lang-btn').forEach((btn) => {
     btn.addEventListener('click', () => setLang(btn.dataset.lang));
@@ -570,8 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   buildFilters();
-  initMap();
-  initInstall();
   initSW();
+  initInstall();
   fetchEvents();
 });
