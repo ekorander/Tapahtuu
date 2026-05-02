@@ -65,9 +65,11 @@ function isoDate(d) {
 function getDateRange(filter) {
   const now = new Date();
   const today = isoDate(now);
+  // Use full ISO datetime so the API excludes events that already started before now
+  const nowIso = now.toISOString();
 
   if (filter === 'today') {
-    return { start: today, end: today };
+    return { start: nowIso, end: today };
   }
 
   if (filter === 'weekend') {
@@ -75,28 +77,26 @@ function getDateRange(filter) {
     const diff = day === 0 ? -1 : (6 - day);
     const sat = new Date(now); sat.setDate(now.getDate() + diff);
     const sun = new Date(sat); sun.setDate(sat.getDate() + 1);
-    // If today is Mon–Fri look forward; if Sat/Sun use current weekend
     if (day >= 1 && day <= 5) {
+      // Upcoming weekend — start from Saturday morning
       return { start: isoDate(sat), end: isoDate(sun) };
     } else {
-      // Current weekend
-      const weekStart = day === 0 ? new Date(now) : sat;
-      const weekEnd   = day === 0 ? now : sun;
-      return { start: isoDate(weekStart), end: isoDate(weekEnd) };
+      // Currently weekend — start from now to avoid past events
+      return { start: nowIso, end: isoDate(sun) };
     }
   }
 
   if (filter === 'week') {
     const end = new Date(now); end.setDate(now.getDate() + 6);
-    return { start: today, end: isoDate(end) };
+    return { start: nowIso, end: isoDate(end) };
   }
 
   if (filter === 'month') {
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return { start: today, end: isoDate(end) };
+    return { start: nowIso, end: isoDate(end) };
   }
 
-  return { start: today, end: today };
+  return { start: nowIso, end: today };
 }
 
 // ── Format helpers ───────────────────────────────────────────────
@@ -164,7 +164,11 @@ async function fetchEvents() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     console.log('[Tapahtuu] Events received:', data.data?.length ?? 0, '| with location:', (data.data || []).filter(hasLocation).length);
-    state.events = (data.data || []).filter(hasLocation);
+    const cutoff = new Date();
+    state.events = (data.data || []).filter(hasLocation).filter(ev => {
+      const t = ev.end_time || ev.start_time;
+      return !t || new Date(t) > cutoff;
+    });
     renderMarkers();
     updateCount();
     showLoading(false, false);
