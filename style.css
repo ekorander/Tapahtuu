@@ -123,23 +123,47 @@ html, body {
   color: var(--orange);
 }
 
-/* ── Filters ───────────────────────────────────────────────────── */
-.filters-row {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 10px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
+/* ── Two-tier filter system ─────────────────────────────────────── */
+.filter-tiers {
+  padding-top: 4px;
 }
 
-.filters-row::-webkit-scrollbar { display: none; }
+.filter-tier {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
 
-.filter-btn {
+.tier-label {
   flex-shrink: 0;
-  padding: 6px 14px;
+  width: 34px;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--gray-300);
+  opacity: 0.65;
+  padding-top: 1px;
+}
+
+.chips-row {
+  flex: 1;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 1px;
+}
+
+.chips-row::-webkit-scrollbar { display: none; }
+
+.chip {
+  flex-shrink: 0;
+  padding: 4px 10px;
   border-radius: 20px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   border: 1.5px solid rgba(255,255,255,0.12);
@@ -147,28 +171,56 @@ html, body {
   color: var(--gray-300);
   transition: var(--transition);
   white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  line-height: 1.4;
 }
 
-.filter-btn .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.filter-btn:hover {
+.chip:hover {
   border-color: rgba(255,255,255,0.3);
   color: var(--white);
 }
 
-.filter-btn.active {
-  background: var(--orange);
-  border-color: var(--orange);
+/* Audience chips — indigo accent */
+.audience-chip.active {
+  background: #5b6af5;
+  border-color: #5b6af5;
   color: var(--white);
-  box-shadow: 0 2px 12px var(--orange-glow);
+  box-shadow: 0 2px 10px rgba(91,106,245,0.45);
+}
+
+/* Type chips — per-chip colour via CSS variable */
+.type-chip.active {
+  background: var(--chip-color, var(--orange));
+  border-color: var(--chip-color, var(--orange));
+  color: var(--white);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.28);
+}
+
+/* Filter clear button */
+.filter-clear-btn {
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--orange-dim);
+  border: 1.5px solid var(--orange);
+  color: var(--orange);
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.filter-clear-btn:hover {
+  background: var(--orange);
+  color: var(--white);
+}
+
+/* Filtered count display */
+.count-total {
+  color: var(--gray-300);
+  font-weight: 400;
+  font-size: 11px;
 }
 
 /* Date filters row */
@@ -500,8 +552,9 @@ html, body {
 @media (min-width: 768px) {
   #header { padding: 14px 24px 0; }
   .logo-text { font-size: 22px; }
-  .filter-btn { font-size: 14px; padding: 7px 16px; }
+  .chip { font-size: 13px; padding: 5px 12px; }
   .date-btn { font-size: 13px; padding: 6px 14px; }
+  .tier-label { width: 38px; font-size: 10px; }
 }
 
 /* ── No events panel ───────────────────────────────────────────── */

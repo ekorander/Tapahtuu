@@ -41,7 +41,10 @@
         <span class="event-count" id="event-count">
           <strong>–</strong> events
         </span>
-
+        <button class="filter-clear-btn" id="filter-clear-btn" style="display:none" aria-label="Clear filters">
+          <span id="filter-clear-label"></span>
+          <span aria-hidden="true">✕</span>
+        </button>
         <div class="lang-toggle">
           <button class="lang-btn" data-lang="fi">FI</button>
           <button class="lang-btn" data-lang="en">EN</button>
@@ -49,9 +52,16 @@
       </div>
     </div>
 
-    <!-- Category filters -->
-    <div class="filters-row" id="cat-filters" role="toolbar" aria-label="Category filters">
-      <!-- Populated by JS -->
+    <!-- Two-tier filters: Audience + Type -->
+    <div class="filter-tiers">
+      <div class="filter-tier">
+        <span class="tier-label" id="audience-label">Ketkä</span>
+        <div class="chips-row" id="audience-filters" role="toolbar" aria-label="Audience filters"></div>
+      </div>
+      <div class="filter-tier">
+        <span class="tier-label" id="type-label">Mitä</span>
+        <div class="chips-row" id="type-filters" role="toolbar" aria-label="Type filters"></div>
+      </div>
     </div>
 
     <!-- Date filters -->
