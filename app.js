@@ -151,18 +151,16 @@ async function geocodeAddress(address) {
 }
 
 async function fetchEventbriteEvents() {
-  if (!EB_TOKEN) return [];
-
   const { start, end } = getDateRange(state.dateFilter);
   // Eventbrite needs a datetime for range_end; date-only strings get T23:59:59Z appended
   const endDt = end.includes('T') ? end : `${end}T23:59:59Z`;
 
   const params = new URLSearchParams({
-    'location.address':    'Helsinki, Finland',
-    'location.within':     '10km',
+    'location.address':       'Helsinki, Finland',
+    'location.within':        '10km',
     'start_date.range_start': start,
     'start_date.range_end':   endDt,
-    'expand':              'venue',
+    'expand':                 'venue',
   });
 
   const url = `${EB_API_BASE}?${params}`;
@@ -171,14 +169,18 @@ async function fetchEventbriteEvents() {
   try {
     const controller = new AbortController();
     const timeoutId  = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(url, {
-      signal:  controller.signal,
-      headers: { 'Authorization': `Bearer ${EB_TOKEN}` },
-    });
+    // Include auth header only when a token is configured
+    const headers = EB_TOKEN ? { 'Authorization': `Bearer ${EB_TOKEN}` } : {};
+    const res = await fetch(url, { signal: controller.signal, headers });
     clearTimeout(timeoutId);
 
     if (!res.ok) {
-      console.warn('[Tapahtuu] Eventbrite returned', res.status, '— skipping');
+      console.warn(
+        '[Tapahtuu] Eventbrite HTTP', res.status,
+        res.status === 401 || res.status === 403
+          ? '— set EB_TOKEN in app.js to enable Eventbrite events'
+          : '— skipping'
+      );
       return [];
     }
 
@@ -244,35 +246,57 @@ async function fetchEvents() {
     start,
     end,
     bbox:      HKI_BBOX,
-    page_size: '200',
+    page_size: '100',   // Helsinki API hard-caps at 100; we paginate below
     include:   'location,keywords',
     sort:      'start_time',
   });
 
   if (cat && cat.keyword) params.set('keyword', cat.keyword);
 
-  const url = `${API_BASE}?${params}`;
-  console.log('[Tapahtuu] Fetching events:', url);
+  const firstUrl = `${API_BASE}?${params}`;
+  console.log('[Tapahtuu] Fetching Helsinki page 1:', firstUrl);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
-    // Fetch Helsinki and Eventbrite in parallel; Eventbrite failures are non-fatal
-    const [res, ebEvents] = await Promise.all([
-      fetch(url, { signal: controller.signal }),
+    // Fetch first Helsinki page and Eventbrite in parallel
+    const [firstRes, ebEvents] = await Promise.all([
+      fetch(firstUrl, { signal: controller.signal }),
       fetchEventbriteEvents(),
     ]);
     clearTimeout(timeoutId);
-    console.log('[Tapahtuu] Helsinki response:', res.status, res.ok);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+
+    if (!firstRes.ok) throw new Error(`HTTP ${firstRes.status}`);
+    const firstData = await firstRes.json();
+    const raw = [...(firstData.data || [])];
+
+    // Follow meta.next links for subsequent pages (up to 5 pages = 500 events)
+    const MAX_PAGES = 5;
+    let nextUrl = firstData.meta?.next;
+    let page = 2;
+    while (nextUrl && page <= MAX_PAGES) {
+      console.log('[Tapahtuu] Fetching Helsinki page', page);
+      const res = await fetch(nextUrl);
+      if (!res.ok) break;
+      const data = await res.json();
+      raw.push(...(data.data || []));
+      nextUrl = data.meta?.next;
+      page++;
+    }
+
     const cutoff = new Date();
-    const helEvents = (data.data || []).filter(hasLocation).filter(ev => {
+    const helEvents = raw.filter(hasLocation).filter(ev => {
       const t = ev.end_time || ev.start_time;
       return !t || new Date(t) > cutoff;
     });
-    console.log('[Tapahtuu] Events — Helsinki:', helEvents.length, '| Eventbrite:', ebEvents.length);
+
+    console.log(
+      `[Tapahtuu] Loaded — Helsinki: ${helEvents.length} (${page - 1} page(s))`,
+      `| Eventbrite: ${ebEvents.length}`,
+      `| Total: ${helEvents.length + ebEvents.length}`
+    );
+
     state.events = [...helEvents, ...ebEvents].sort((a, b) =>
       new Date(a.start_time || 0) - new Date(b.start_time || 0)
     );
