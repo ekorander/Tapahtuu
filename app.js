@@ -3,9 +3,14 @@
 ──────────────────────────────────────────────────────────────── */
 
 // ── Config ──────────────────────────────────────────────────────
-const API_BASE = 'https://api.hel.fi/linkedevents/v1/event/';
-const HKI_CENTER = [60.1699, 24.9384];
-const HKI_BBOX = '24.5,60.05,25.3,60.4';  // wide Helsinki metro bbox
+const API_BASE      = 'https://api.hel.fi/linkedevents/v1/event/';
+const EB_API_BASE   = 'https://www.eventbriteapi.com/v3/events/search/';
+// To show Eventbrite events, set this to your Eventbrite private token.
+// Get one free at https://www.eventbrite.com/platform/api-keys
+const EB_TOKEN      = '';
+const HKI_CENTER    = [60.1699, 24.9384];
+const HKI_BBOX      = '24.5,60.05,25.3,60.4';  // wide Helsinki metro bbox
+const EVENTBRITE_COLOR = '#1abc9c';  // teal — visually distinct from category colours
 
 // Category definitions with YSO keyword IDs
 const CATEGORIES = [
@@ -120,6 +125,9 @@ function formatDateTime(startStr, endStr) {
 }
 
 function getCategoryForEvent(event) {
+  if (event._source === 'eventbrite') {
+    return { id: 'eventbrite', fi: 'Eventbrite', en: 'Eventbrite', icon: '🎟️', color: EVENTBRITE_COLOR };
+  }
   const keywords = (event.keywords || []).map((k) => k['@id'] || k.id || '');
   for (const cat of CATEGORIES.slice(1)) {
     // keyword @id is a full URL like: .../keyword/yso:p1808/...
@@ -128,6 +136,98 @@ function getCategoryForEvent(event) {
     }
   }
   return CATEGORIES[0]; // 'all' / default orange
+}
+
+// ── Eventbrite helpers ───────────────────────────────────────────
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'fi,en' } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.length) return null;
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch { return null; }
+}
+
+async function fetchEventbriteEvents() {
+  if (!EB_TOKEN) return [];
+
+  const { start, end } = getDateRange(state.dateFilter);
+  // Eventbrite needs a datetime for range_end; date-only strings get T23:59:59Z appended
+  const endDt = end.includes('T') ? end : `${end}T23:59:59Z`;
+
+  const params = new URLSearchParams({
+    'location.address':    'Helsinki, Finland',
+    'location.within':     '10km',
+    'start_date.range_start': start,
+    'start_date.range_end':   endDt,
+    'expand':              'venue',
+  });
+
+  const url = `${EB_API_BASE}?${params}`;
+  console.log('[Tapahtuu] Fetching Eventbrite:', url);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(url, {
+      signal:  controller.signal,
+      headers: { 'Authorization': `Bearer ${EB_TOKEN}` },
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      console.warn('[Tapahtuu] Eventbrite returned', res.status, '— skipping');
+      return [];
+    }
+
+    const data = await res.json();
+    const now  = new Date();
+    const normalized = [];
+    let geocoded = 0;
+
+    for (const ev of (data.events || [])) {
+      const venue = ev.venue;
+      let lat, lng;
+
+      if (venue?.latitude && venue?.longitude) {
+        lat = parseFloat(venue.latitude);
+        lng = parseFloat(venue.longitude);
+      } else if (venue && geocoded < 5) {
+        const addr = [venue.address?.address_1, venue.address?.city]
+          .filter(Boolean).join(', ');
+        if (addr) {
+          const coords = await geocodeAddress(addr);
+          if (coords) { lat = coords.lat; lng = coords.lng; geocoded++; }
+        }
+      }
+
+      if (!lat || !lng) continue;
+
+      const compareTime = ev.end?.utc || ev.start?.utc;
+      if (compareTime && new Date(compareTime) <= now) continue;
+
+      normalized.push({
+        _source:           'eventbrite',
+        name:              { fi: ev.name?.text || '', en: ev.name?.text || '' },
+        short_description: { fi: ev.summary || '', en: ev.summary || '' },
+        start_time:        ev.start?.utc,
+        end_time:          ev.end?.utc,
+        info_url:          { fi: ev.url, en: ev.url },
+        location: {
+          position: { coordinates: [lng, lat] },
+          name:     { fi: venue.name || '', en: venue.name || '' },
+        },
+        keywords: [],
+      });
+    }
+
+    return normalized;
+  } catch (err) {
+    console.warn('[Tapahtuu] Eventbrite fetch failed:', err.message);
+    return [];
+  }
 }
 
 // ── API ──────────────────────────────────────────────────────────
@@ -158,17 +258,24 @@ async function fetchEvents() {
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    // Fetch Helsinki and Eventbrite in parallel; Eventbrite failures are non-fatal
+    const [res, ebEvents] = await Promise.all([
+      fetch(url, { signal: controller.signal }),
+      fetchEventbriteEvents(),
+    ]);
     clearTimeout(timeoutId);
-    console.log('[Tapahtuu] Response status:', res.status, res.ok);
+    console.log('[Tapahtuu] Helsinki response:', res.status, res.ok);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    console.log('[Tapahtuu] Events received:', data.data?.length ?? 0, '| with location:', (data.data || []).filter(hasLocation).length);
     const cutoff = new Date();
-    state.events = (data.data || []).filter(hasLocation).filter(ev => {
+    const helEvents = (data.data || []).filter(hasLocation).filter(ev => {
       const t = ev.end_time || ev.start_time;
       return !t || new Date(t) > cutoff;
     });
+    console.log('[Tapahtuu] Events — Helsinki:', helEvents.length, '| Eventbrite:', ebEvents.length);
+    state.events = [...helEvents, ...ebEvents].sort((a, b) =>
+      new Date(a.start_time || 0) - new Date(b.start_time || 0)
+    );
     renderMarkers();
     updateCount();
     showLoading(false, false);
